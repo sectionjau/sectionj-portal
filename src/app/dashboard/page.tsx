@@ -1,8 +1,3 @@
-Thought process
-Thought process
-File 2: Go to src/app/dashboard/page.tsx, click the pencil icon, replace everything with this:
-
-tsx
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 
