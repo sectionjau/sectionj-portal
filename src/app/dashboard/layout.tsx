@@ -3,17 +3,35 @@ import Link from "next/link";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user?.id ?? "")
+    .maybeSingle();
+
+  const isAdmin = profile?.role === "admin";
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="border-b border-sj-line">
         <div className="max-w-6xl mx-auto px-6 md:px-12 py-5 flex items-center justify-between">
-          <Link href="/dashboard" className="text-base md:text-lg font-medium tracking-tight no-underline">
-            Section J
-          </Link>
+          <div className="flex items-center gap-8">
+            <Link href="/dashboard" className="text-base md:text-lg font-medium tracking-tight no-underline">
+              Section J
+            </Link>
+            {isAdmin && (
+              <nav className="hidden sm:flex items-center gap-6 text-sm text-sj-muted">
+                <Link
+                  href="/dashboard/admin/projects"
+                  className="hover:text-sj-fg transition-colors no-underline"
+                >
+                  Projects
+                </Link>
+              </nav>
+            )}
+          </div>
           <nav className="flex items-center gap-6 text-sm">
             <span className="text-sj-muted hidden sm:inline">{user?.email}</span>
             <form action="/dashboard/logout" method="post">
