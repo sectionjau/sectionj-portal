@@ -79,7 +79,12 @@ const { data: projects } = await adminClient
               <div key={p.id} className="px-6 py-5 flex items-center justify-between gap-6">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-3 mb-1 flex-wrap">
-                    <p className="font-medium tracking-tight truncate">{p.name}</p>
+                    <Link
+                      href={`/dashboard/admin/projects/${p.id}`}
+                      className="font-medium tracking-tight truncate hover:underline underline-offset-4"
+                    >
+                      {p.name}
+                    </Link>
                     <span
                       className={`text-[0.65rem] uppercase tracking-eyebrow border px-2 py-0.5 ${statusColour[p.status] ?? ""}`}
                     >
