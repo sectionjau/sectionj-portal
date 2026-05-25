@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { deleteProject } from "./actions";
@@ -10,6 +11,7 @@ export default async function AdminProjectsPage({
 }: {
   searchParams: Promise<{ success?: string; error?: string }>;
 }) {
+  // Auth check via regular client
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -22,7 +24,9 @@ export default async function AdminProjectsPage({
 
   if (profile?.role !== "admin") redirect("/dashboard");
 
-  const { data: projects } = await supabase
+  // Data fetch via admin client (bypasses RLS)
+  const adminClient = createAdminClient();
+  const { data: projects } = await adminClient
     .from("projects")
     .select(`
       id, name, address, project_type, service, status, created_at,
@@ -115,6 +119,10 @@ export default async function AdminProjectsPage({
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
       )}
     </div>
   );
