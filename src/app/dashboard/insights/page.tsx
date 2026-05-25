@@ -3,47 +3,149 @@ import { redirect } from "next/navigation";
 
 export const metadata = { title: "Glazing Insights — Section J Portal" };
 
-// Orientation display order (clockwise from north) and full labels
+// ─── Climate zone benchmarks ──────────────────────────────────────────────────
+// Glazing ratio = (total glazing area on this orientation / conditioned floor area) × 100
+// shgcCritical: 'min' = want high SHGC, 'max' = want low SHGC, 'none' = U-value matters more
+type Benchmark = {
+  ratioMin: number;   // % of floor area — below this is conservative
+  ratioMax: number;   // % of floor area — above this needs review
+  shgcIdealMin: number;
+  shgcIdealMax: number;
+  shgcCritical: "min" | "max" | "range" | "none";
+  // Approximate cooling load contribution per m² of glazing (MJ/m²/yr), SHGC ~0.5
+  coolingFactor: number;
+  // Approximate heating load contribution per m² of glazing (MJ/m²/yr), SHGC ~0.5 (negative = helps heating)
+  heatingFactor: number;
+};
+
+// Zone 62 — Melbourne area (temperate, heating-dominated)
+const ZONE_62: Record<string, Benchmark> = {
+  N:  { ratioMin: 5,  ratioMax: 15, shgcIdealMin: 0.4,  shgcIdealMax: 1.0,  shgcCritical: "min",   coolingFactor: 1.0, heatingFactor: -2.5 },
+  NE: { ratioMin: 3,  ratioMax: 8,  shgcIdealMin: 0.35, shgcIdealMax: 0.6,  shgcCritical: "range", coolingFactor: 2.0, heatingFactor: -1.5 },
+  E:  { ratioMin: 2,  ratioMax: 7,  shgcIdealMin: 0.3,  shgcIdealMax: 0.6,  shgcCritical: "range", coolingFactor: 3.0, heatingFactor: -0.5 },
+  SE: { ratioMin: 1,  ratioMax: 5,  shgcIdealMin: 0.0,  shgcIdealMax: 0.6,  shgcCritical: "none",  coolingFactor: 1.5, heatingFactor:  0.5 },
+  S:  { ratioMin: 1,  ratioMax: 4,  shgcIdealMin: 0.0,  shgcIdealMax: 0.6,  shgcCritical: "none",  coolingFactor: 0.5, heatingFactor:  1.5 },
+  SW: { ratioMin: 1,  ratioMax: 4,  shgcIdealMin: 0.0,  shgcIdealMax: 0.35, shgcCritical: "max",   coolingFactor: 3.5, heatingFactor:  0.5 },
+  W:  { ratioMin: 1,  ratioMax: 4,  shgcIdealMin: 0.0,  shgcIdealMax: 0.3,  shgcCritical: "max",   coolingFactor: 4.5, heatingFactor:  0.5 },
+  NW: { ratioMin: 2,  ratioMax: 6,  shgcIdealMin: 0.0,  shgcIdealMax: 0.4,  shgcCritical: "max",   coolingFactor: 3.5, heatingFactor: -1.0 },
+};
+
+// Default fallback for other zones (neutral guidance)
+const DEFAULT_BENCHMARK: Benchmark = {
+  ratioMin: 2, ratioMax: 10, shgcIdealMin: 0.2, shgcIdealMax: 0.6,
+  shgcCritical: "range", coolingFactor: 2.5, heatingFactor: 0,
+};
+
+function getBenchmarks(zoneStr: string | null): Record<string, Benchmark> {
+  const num = parseInt((zoneStr ?? "").split(/[\s-]/)[0]);
+  if (num === 62 || num === 63 || num === 64) return ZONE_62;
+  // Could add other zones here
+  return ZONE_62; // reasonable default for now
+}
+
+function assessRatio(ratio: number, b: Benchmark): "conservative" | "optimal" | "heavy" {
+  if (ratio < b.ratioMin) return "conservative";
+  if (ratio > b.ratioMax) return "heavy";
+  return "optimal";
+}
+
+function assessSHGC(shgc: number, b: Benchmark): "good" | "review" | "concern" {
+  if (b.shgcCritical === "none") return "good";
+  if (b.shgcCritical === "min") {
+    if (shgc >= b.shgcIdealMin) return "good";
+    if (shgc >= b.shgcIdealMin - 0.1) return "review";
+    return "concern";
+  }
+  if (b.shgcCritical === "max") {
+    if (shgc <= b.shgcIdealMax) return "good";
+    if (shgc <= b.shgcIdealMax + 0.1) return "review";
+    return "concern";
+  }
+  // range
+  if (shgc >= b.shgcIdealMin && shgc <= b.shgcIdealMax) return "good";
+  return "review";
+}
+
+const SHGC_LABEL: Record<string, { label: string; colour: string }> = {
+  good:    { label: "Appropriate",    colour: "text-emerald-700 bg-emerald-50 border-emerald-200" },
+  review:  { label: "Review",         colour: "text-amber-700 bg-amber-50 border-amber-200" },
+  concern: { label: "Concern",        colour: "text-red-700 bg-red-50 border-red-200" },
+};
+
+const RATIO_LABEL: Record<string, { label: string; colour: string; detail: string }> = {
+  conservative: {
+    label: "Conservative",
+    colour: "text-sky-700 bg-sky-50 border-sky-200",
+    detail: "You have room to increase glazing on this face.",
+  },
+  optimal: {
+    label: "Optimal",
+    colour: "text-emerald-700 bg-emerald-50 border-emerald-200",
+    detail: "Glazing area is well-balanced for this orientation.",
+  },
+  heavy: {
+    label: "Review",
+    colour: "text-amber-700 bg-amber-50 border-amber-200",
+    detail: "Glazing area is above the typical optimal range — check headroom.",
+  },
+};
+
+const SHGC_GUIDANCE: Record<string, Record<string, string>> = {
+  N: {
+    good:    "High SHGC on north is ideal in zone 62 — you're capturing winter solar gain effectively.",
+    review:  "SHGC is slightly below optimal for north. You may be limiting passive heating unnecessarily.",
+    concern: "Low SHGC on north-facing glazing blocks valuable winter sun. Consider a higher-SHGC product.",
+  },
+  E: {
+    good:    "SHGC is well-suited for east glazing — balanced morning solar access without excessive gain.",
+    review:  "SHGC sits outside the optimal range for east-facing glass. Minor adjustment may improve performance.",
+    concern: "SHGC choice for east glazing may be costing thermal performance. Review product selection.",
+  },
+  W: {
+    good:    "Low SHGC on west is the right call — protecting against afternoon overheating.",
+    review:  "SHGC is slightly high for west-facing glass. Risk of cooling load pressure on warm days.",
+    concern: "SHGC is too high for west-facing glazing in zone 62. This is likely contributing to cooling load.",
+  },
+  SW: {
+    good:    "SHGC is appropriately low for this high-risk orientation.",
+    review:  "SHGC is borderline for south-west glazing. Consider a lower-SHGC product.",
+    concern: "SHGC is too high for south-west — this is the second-highest overheating risk after west.",
+  },
+  NW: {
+    good:    "SHGC is controlled for this afternoon-sun orientation.",
+    review:  "SHGC is slightly elevated for north-west. Monitor cooling load as project count grows.",
+    concern: "SHGC is too high for north-west glazing — strong afternoon exposure in summer.",
+  },
+  NE: {
+    good:    "SHGC is within the right range for north-east — morning sun with manageable gain.",
+    review:  "SHGC is outside the optimal range for north-east glazing.",
+    concern: "SHGC needs attention on this orientation.",
+  },
+  SE: {
+    good:    "South-east glazing has low direct sun exposure — SHGC is not the critical variable here.",
+    review:  "South-east glazing — focus on U-value rather than SHGC for this orientation.",
+    concern: "South-east glazing — focus on U-value rather than SHGC for this orientation.",
+  },
+  S: {
+    good:    "South-facing glazing receives minimal direct sun — U-value is your main performance lever here.",
+    review:  "South-facing glazing — U-value matters more than SHGC on this orientation.",
+    concern: "South-facing glazing — U-value matters more than SHGC on this orientation.",
+  },
+};
+
 const ORIENTATION_ORDER = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
-const ORIENTATION_LABEL: Record<string, string> = {
+const ORIENTATION_FULL: Record<string, string> = {
   N: "North", NE: "North-East", E: "East", SE: "South-East",
   S: "South", SW: "South-West", W: "West", NW: "North-West",
 };
 
-// Orientation performance guidance for context
-const ORIENTATION_CONTEXT: Record<string, string> = {
-  N:  "High solar access in winter. Large glazing can boost passive heating but needs shading control to avoid summer overheating.",
-  NE: "Good morning sun. Moderate solar gain — lower overheating risk than north-west.",
-  E:  "Morning sun only. Lower peak heat load. Awnings perform well without heavy shading.",
-  SE: "Low direct sun. Useful for diffuse light in low-glare rooms.",
-  S:  "Minimal direct sun year-round. Glazing here contributes to heat loss — keep areas modest or use higher-performance glass.",
-  SW: "Afternoon summer sun — highest overheating risk. Limit area or use low SHGC glass.",
-  W:  "Hot afternoon sun. Cooling loads rise quickly. Low SHGC glazing or external shading essential.",
-  NW: "Strong afternoon sun, especially in summer. Similar risks to west but with some winter benefit.",
-};
-
-type WindowRow = {
-  orientation: string;
-  room_type: string;
-  window_type: string;
-  width_mm: number | null;
-  height_mm: number | null;
-  area_m2: number | null;
-  u_value: number | null;
-  shgc: number | null;
-  glazing_product: string | null;
-  climate_zone: string | null;
-  star_rating: number | null;
-  heating_headroom: number | null;
-  cooling_headroom: number | null;
-};
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function GlazingInsightsPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // ── Get all project IDs for this architect ──────────────────────────────
   const { data: links } = await supabase
     .from("project_clients")
     .select("project_id")
@@ -51,98 +153,105 @@ export default async function GlazingInsightsPage() {
 
   const projectIds = (links ?? []).map((l) => l.project_id);
 
-  // ── Get certificates + windows for those projects ───────────────────────
   const { data: certificates } = projectIds.length
     ? await supabase
         .from("certificates")
         .select(`
           id, star_rating, climate_zone, conditioned_floor_area,
           heating_load, heating_limit, cooling_load, cooling_limit,
-          project_id,
           certificate_windows (
-            id, label, room_type, orientation, window_type,
+            orientation, room_type, window_type,
             width_mm, height_mm, area_m2, u_value, shgc, glazing_product
           )
         `)
         .in("project_id", projectIds)
     : { data: [] };
 
-  // ── Flatten all windows with certificate context ─────────────────────────
-  const allWindows: WindowRow[] = [];
+  // ── Aggregate data ───────────────────────────────────────────────────────────
+  type OrientationData = {
+    windows: { room_type: string; window_type: string; area_m2: number; shgc: number; u_value: number }[];
+    totalArea: number;
+    avgSHGC: number;
+    avgUValue: number;
+    topRoomType: string;
+  };
+
+  const byOrientation = new Map<string, OrientationData>();
   const climateZones = new Set<string>();
+  let totalFloorArea = 0;
   let totalProjects = 0;
+  let primaryZone: string | null = null;
+
+  // Heating/cooling headroom (average across all certs)
+  let totalHeatingHeadroom = 0;
+  let totalCoolingHeadroom = 0;
+  let heatingAbsolute = 0; // MJ/m² available
+  let coolingAbsolute = 0;
+  let certCount = 0;
 
   for (const cert of certificates ?? []) {
     if (!cert.certificate_windows?.length) continue;
     totalProjects++;
-    if (cert.climate_zone) climateZones.add(cert.climate_zone);
+    if (cert.climate_zone) { climateZones.add(cert.climate_zone); primaryZone = cert.climate_zone; }
+    if (cert.conditioned_floor_area) totalFloorArea += cert.conditioned_floor_area;
 
-    const heatingHeadroom =
-      cert.heating_load && cert.heating_limit
-        ? ((cert.heating_limit - cert.heating_load) / cert.heating_limit) * 100
-        : null;
-    const coolingHeadroom =
-      cert.cooling_load && cert.cooling_limit
-        ? ((cert.cooling_limit - cert.cooling_load) / cert.cooling_limit) * 100
-        : null;
+    if (cert.heating_load && cert.heating_limit) {
+      totalHeatingHeadroom += ((cert.heating_limit - cert.heating_load) / cert.heating_limit) * 100;
+      heatingAbsolute += cert.heating_limit - cert.heating_load;
+    }
+    if (cert.cooling_load && cert.cooling_limit) {
+      totalCoolingHeadroom += ((cert.cooling_limit - cert.cooling_load) / cert.cooling_limit) * 100;
+      coolingAbsolute += cert.cooling_limit - cert.cooling_load;
+    }
+    certCount++;
 
     for (const w of cert.certificate_windows) {
-      allWindows.push({
-        orientation: w.orientation ?? "?",
-        room_type: w.room_type ?? "other",
-        window_type: w.window_type ?? "other",
-        width_mm: w.width_mm,
-        height_mm: w.height_mm,
-        area_m2: w.area_m2,
-        u_value: w.u_value,
-        shgc: w.shgc,
-        glazing_product: w.glazing_product,
-        climate_zone: cert.climate_zone,
-        star_rating: cert.star_rating,
-        heating_headroom: heatingHeadroom,
-        cooling_headroom: coolingHeadroom,
-      });
+      if (!w.orientation) continue;
+      const area = w.area_m2 ?? (w.width_mm && w.height_mm ? (w.width_mm * w.height_mm) / 1_000_000 : 0);
+      if (!byOrientation.has(w.orientation)) {
+        byOrientation.set(w.orientation, { windows: [], totalArea: 0, avgSHGC: 0, avgUValue: 0, topRoomType: "" });
+      }
+      const d = byOrientation.get(w.orientation)!;
+      d.windows.push({ room_type: w.room_type ?? "other", window_type: w.window_type ?? "other", area_m2: area, shgc: w.shgc ?? 0, u_value: w.u_value ?? 0 });
+      d.totalArea += area;
     }
   }
 
-  // ── Group by orientation ─────────────────────────────────────────────────
-  const byOrientation = new Map<string, WindowRow[]>();
-  for (const w of allWindows) {
-    if (!byOrientation.has(w.orientation)) byOrientation.set(w.orientation, []);
-    byOrientation.get(w.orientation)!.push(w);
+  // Compute averages per orientation
+  for (const [, d] of byOrientation) {
+    d.avgSHGC = d.windows.reduce((sum, w) => sum + w.shgc, 0) / d.windows.length;
+    d.avgUValue = d.windows.reduce((sum, w) => sum + w.u_value, 0) / d.windows.length;
+    // Most common room type
+    const roomCounts = new Map<string, number>();
+    for (const w of d.windows) roomCounts.set(w.room_type, (roomCounts.get(w.room_type) ?? 0) + 1);
+    d.topRoomType = [...roomCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
   }
 
-  // Sort orientations in compass order, putting unknown at end
-  const sortedOrientations = [
-    ...ORIENTATION_ORDER.filter((o) => byOrientation.has(o)),
-    ...[...byOrientation.keys()].filter((o) => !ORIENTATION_ORDER.includes(o)),
-  ];
+  const avgHeatingHeadroom = certCount ? totalHeatingHeadroom / certCount : 0;
+  const avgCoolingHeadroom = certCount ? totalCoolingHeadroom / certCount : 0;
+  const avgHeatingAbsolute = certCount ? heatingAbsolute / certCount : 0;
+  const avgCoolingAbsolute = certCount ? coolingAbsolute / certCount : 0;
+  const avgFloorArea = totalProjects ? totalFloorArea / totalProjects : 0;
 
-  // ── Helper: most common value in array ──────────────────────────────────
-  function mostCommon<T>(arr: T[]): T | null {
-    if (!arr.length) return null;
-    const counts = new Map<string, number>();
-    for (const v of arr) {
-      const key = String(v);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    const [topKey] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
-    return arr.find((v) => String(v) === topKey) ?? null;
+  const benchmarks = getBenchmarks(primaryZone);
+  const sortedOrientations = ORIENTATION_ORDER.filter((o) => byOrientation.has(o));
+  const totalWindows = [...byOrientation.values()].reduce((n, d) => n + d.windows.length, 0);
+
+  // ── Design freedom: additional m² capacity per orientation ────────────────
+  // Additional glazing = available headroom (MJ/m²) / cooling factor for that orientation
+  // Only applies where cooling headroom exists
+  function additionalGlazingCapacity(orientation: string): number | null {
+    const b = benchmarks[orientation];
+    if (!b || avgCoolingAbsolute <= 0) return null;
+    const shgcScale = 0.5; // normalised to SHGC 0.5 reference
+    return parseFloat((avgCoolingAbsolute / (b.coolingFactor * shgcScale)).toFixed(1));
   }
 
-  function avg(nums: (number | null)[]): number | null {
-    const valid = nums.filter((n): n is number => n !== null);
-    if (!valid.length) return null;
-    return valid.reduce((a, b) => a + b, 0) / valid.length;
-  }
-
-  // ── Empty state ──────────────────────────────────────────────────────────
-  if (allWindows.length === 0) {
+  // ── Empty state ──────────────────────────────────────────────────────────────
+  if (totalWindows === 0) {
     return (
       <div className="max-w-5xl mx-auto px-6 md:px-12 py-12 md:py-16">
-        <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-2 font-medium">
-          Service 1 · NatHERS
-        </p>
+        <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-2 font-medium">Service 1 · NatHERS</p>
         <h1 className="text-3xl md:text-4xl font-normal tracking-tight mb-10">Glazing Insights</h1>
         <div className="border border-sj-line bg-sj-surface px-8 py-12 text-center max-w-2xl">
           <p className="text-sj-muted text-sm leading-relaxed">
@@ -157,168 +266,191 @@ export default async function GlazingInsightsPage() {
   return (
     <div className="max-w-5xl mx-auto px-6 md:px-12 py-12 md:py-16">
       {/* Header */}
-      <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-2 font-medium">
-        Service 1 · NatHERS
-      </p>
+      <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-2 font-medium">Service 1 · NatHERS</p>
       <h1 className="text-3xl md:text-4xl font-normal tracking-tight mb-3">Glazing Insights</h1>
-      <p className="text-sj-muted text-sm mb-10 max-w-xl">
-        Patterns drawn from your NatHERS-certified projects. Each new certificate refines the picture.
+      <p className="text-sm text-sj-muted mb-2 max-w-xl">
+        Analysis drawn from {totalProjects} {totalProjects === 1 ? "project" : "projects"}, {totalWindows} windows
+        {primaryZone ? ` · Climate zone ${primaryZone.split(/[\s-]/)[0]}` : ""}.
+      </p>
+      <p className="text-xs text-sj-muted mb-10 max-w-xl">
+        Additional glazing capacity figures are estimates based on zone 62 solar heat gain factors. Use as design direction, not compliance calculation.
       </p>
 
-      {/* Summary strip */}
-      <div className="border border-sj-line bg-sj-surface px-6 py-5 mb-10 grid grid-cols-3 gap-6">
-        <div>
-          <p className="text-2xl font-light tracking-tight">{totalProjects}</p>
-          <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mt-1">
-            {totalProjects === 1 ? "Project analysed" : "Projects analysed"}
-          </p>
-        </div>
-        <div>
-          <p className="text-2xl font-light tracking-tight">{allWindows.length}</p>
-          <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mt-1">Windows extracted</p>
-        </div>
-        <div>
-          <p className="text-2xl font-light tracking-tight">{climateZones.size}</p>
-          <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mt-1">
-            {climateZones.size === 1 ? "Climate zone" : "Climate zones"}
-          </p>
-        </div>
-      </div>
+      {/* ── Question 1: How am I using glazing? ─────────────────────────────── */}
+      <section className="mb-14">
+        <h2 className="text-lg font-medium tracking-tight mb-1">How am I using glazing?</h2>
+        <p className="text-sm text-sj-muted mb-6">
+          Glazing area on each orientation as a percentage of conditioned floor area, compared to the optimal range for zone 62.
+        </p>
 
-      {/* Climate zones */}
-      {climateZones.size > 0 && (
-        <div className="flex flex-wrap gap-2 mb-10">
-          {[...climateZones].map((zone) => (
-            <span key={zone} className="text-[0.65rem] uppercase tracking-eyebrow border border-sj-line bg-sj-surface px-3 py-1">
-              Zone {zone}
-            </span>
-          ))}
-        </div>
-      )}
+        <div className="border border-sj-line divide-y divide-sj-line">
+          {/* Header row */}
+          <div className="px-5 py-3 bg-sj-surface grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 items-center">
+            {["Orientation", "Windows", "Glazing area", "% of floor area", "Assessment"].map((h) => (
+              <p key={h} className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted">{h}</p>
+            ))}
+          </div>
 
-      {/* Orientation breakdown */}
-      <h2 className="text-lg font-medium tracking-tight mb-6">By orientation</h2>
-      <div className="space-y-6">
-        {sortedOrientations.map((orientation) => {
-          const windows = byOrientation.get(orientation)!;
+          {sortedOrientations.map((o) => {
+            const d = byOrientation.get(o)!;
+            const b = benchmarks[o] ?? DEFAULT_BENCHMARK;
+            const ratio = avgFloorArea > 0 ? (d.totalArea / avgFloorArea) * 100 : 0;
+            const assessment = assessRatio(ratio, b);
+            const { label, colour, detail } = RATIO_LABEL[assessment];
 
-          // Room type counts
-          const roomCounts = new Map<string, number>();
-          for (const w of windows) {
-            roomCounts.set(w.room_type, (roomCounts.get(w.room_type) ?? 0) + 1);
-          }
-          const roomsSorted = [...roomCounts.entries()].sort((a, b) => b[1] - a[1]);
-
-          // Size range
-          const widths = windows.map((w) => w.width_mm).filter((n): n is number => n !== null);
-          const minWidth = widths.length ? Math.min(...widths) : null;
-          const maxWidth = widths.length ? Math.max(...widths) : null;
-
-          // Typical product
-          const topProduct = mostCommon(windows.map((w) => w.glazing_product).filter(Boolean));
-          const topSHGC = mostCommon(windows.map((w) => w.shgc).filter((n): n is number => n !== null));
-          const topUValue = mostCommon(windows.map((w) => w.u_value).filter((n): n is number => n !== null));
-          const topType = mostCommon(windows.map((w) => w.window_type).filter(Boolean));
-
-          // Average headroom
-          const avgHeating = avg(windows.map((w) => w.heating_headroom));
-          const avgCooling = avg(windows.map((w) => w.cooling_headroom));
-
-          return (
-            <div key={orientation} className="border border-sj-line">
-              {/* Orientation header */}
-              <div className="px-6 py-4 border-b border-sj-line flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 border border-sj-line bg-sj-fg text-white flex items-center justify-center text-sm font-medium shrink-0">
-                    {orientation}
+            return (
+              <div key={o}>
+                <div className="px-5 py-4 grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-sj-fg text-white flex items-center justify-center text-xs font-medium shrink-0">
+                      {o}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{ORIENTATION_FULL[o] ?? o}</p>
+                      <p className="text-xs text-sj-muted capitalize">{d.topRoomType}</p>
+                    </div>
                   </div>
+                  <p className="text-sm">{d.windows.length}</p>
+                  <p className="text-sm">{d.totalArea.toFixed(2)} m²</p>
                   <div>
-                    <p className="font-medium tracking-tight">{ORIENTATION_LABEL[orientation] ?? orientation}</p>
-                    <p className="text-xs text-sj-muted mt-0.5">{windows.length} {windows.length === 1 ? "window" : "windows"}</p>
+                    <p className="text-sm font-medium">{ratio.toFixed(1)}%</p>
+                    <p className="text-[0.6rem] text-sj-muted">optimal {b.ratioMin}–{b.ratioMax}%</p>
                   </div>
+                  <span className={`text-[0.65rem] uppercase tracking-eyebrow border px-2 py-0.5 w-fit ${colour}`}>
+                    {label}
+                  </span>
                 </div>
-                {/* Headroom pills */}
-                <div className="flex gap-3">
-                  {avgHeating !== null && (
-                    <div className="text-center">
-                      <p className="text-xs font-medium text-emerald-700">{avgHeating.toFixed(0)}% under</p>
-                      <p className="text-[0.6rem] uppercase tracking-eyebrow text-sj-muted">heating limit</p>
-                    </div>
-                  )}
-                  {avgCooling !== null && (
-                    <div className="text-center">
-                      <p className="text-xs font-medium text-emerald-700">{avgCooling.toFixed(0)}% under</p>
-                      <p className="text-[0.6rem] uppercase tracking-eyebrow text-sj-muted">cooling limit</p>
-                    </div>
-                  )}
+                <div className="px-5 pb-3 ml-11">
+                  <p className="text-xs text-sj-muted">{detail}</p>
                 </div>
               </div>
+            );
+          })}
+        </div>
+      </section>
 
-              <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {/* Left: glazing specs */}
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mb-2">Glazing used</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-[0.6rem] uppercase tracking-eyebrow text-sj-muted mb-0.5">Width range</p>
-                        <p className="text-sm font-medium">
-                          {minWidth === maxWidth
-                            ? `${minWidth} mm`
-                            : `${minWidth}–${maxWidth} mm`}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[0.6rem] uppercase tracking-eyebrow text-sj-muted mb-0.5">Type</p>
-                        <p className="text-sm font-medium capitalize">{topType ?? "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-[0.6rem] uppercase tracking-eyebrow text-sj-muted mb-0.5">U-value</p>
-                        <p className="text-sm font-medium">{topUValue ?? "—"}</p>
-                      </div>
-                      <div>
-                        <p className="text-[0.6rem] uppercase tracking-eyebrow text-sj-muted mb-0.5">SHGC</p>
-                        <p className="text-sm font-medium">{topSHGC ?? "—"}</p>
-                      </div>
+      {/* ── Question 2: Is my SHGC appropriate? ─────────────────────────────── */}
+      <section className="mb-14">
+        <h2 className="text-lg font-medium tracking-tight mb-1">Is my SHGC selection working?</h2>
+        <p className="text-sm text-sj-muted mb-6">
+          SHGC (Solar Heat Gain Coefficient) needs to be tuned to each orientation — what's right for north can be wrong for west.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {sortedOrientations.map((o) => {
+            const d = byOrientation.get(o)!;
+            const b = benchmarks[o] ?? DEFAULT_BENCHMARK;
+            const assessment = assessSHGC(d.avgSHGC, b);
+            const { label, colour } = SHGC_LABEL[assessment];
+            const guidance = SHGC_GUIDANCE[o]?.[assessment] ?? "";
+
+            return (
+              <div key={o} className="border border-sj-line p-5">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-sj-fg text-white flex items-center justify-center text-xs font-medium shrink-0">
+                      {o}
                     </div>
-                    {topProduct && (
-                      <p className="text-xs text-sj-muted mt-3">
-                        Product: <span className="font-medium text-sj-fg">{topProduct}</span>
+                    <div>
+                      <p className="text-sm font-medium">{ORIENTATION_FULL[o] ?? o}</p>
+                      <p className="text-xs text-sj-muted">
+                        SHGC {d.avgSHGC.toFixed(2)} · U-value {d.avgUValue.toFixed(1)}
                       </p>
-                    )}
-                  </div>
-
-                  {/* Room types */}
-                  <div>
-                    <p className="text-[0.6rem] uppercase tracking-eyebrow text-sj-muted mb-2">Room types</p>
-                    <div className="flex flex-wrap gap-2">
-                      {roomsSorted.map(([room, count]) => (
-                        <span
-                          key={room}
-                          className="text-[0.65rem] border border-sj-line bg-sj-surface px-2 py-0.5 capitalize"
-                        >
-                          {room} {count > 1 ? `×${count}` : ""}
-                        </span>
-                      ))}
                     </div>
                   </div>
+                  <span className={`shrink-0 text-[0.65rem] uppercase tracking-eyebrow border px-2 py-0.5 ${colour}`}>
+                    {label}
+                  </span>
                 </div>
-
-                {/* Right: context */}
-                <div className="border-l border-sj-line pl-6">
-                  <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mb-2">Design context</p>
-                  <p className="text-sm text-sj-muted leading-relaxed">
-                    {ORIENTATION_CONTEXT[orientation] ?? "No guidance available for this orientation."}
+                {guidance && <p className="text-xs text-sj-muted leading-relaxed">{guidance}</p>}
+                {b.shgcCritical !== "none" && (
+                  <p className="text-[0.6rem] text-sj-muted mt-2">
+                    Recommended: SHGC {b.shgcCritical === "min" ? `≥ ${b.shgcIdealMin}` : b.shgcCritical === "max" ? `≤ ${b.shgcIdealMax}` : `${b.shgcIdealMin}–${b.shgcIdealMax}`}
                   </p>
-                </div>
+                )}
+                {b.shgcCritical === "none" && (
+                  <p className="text-[0.6rem] text-sj-muted mt-2">
+                    U-value is the primary lever on this orientation — target U ≤ 2.0 for best performance.
+                  </p>
+                )}
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </section>
 
-      <p className="mt-10 text-xs text-sj-muted">
-        Insights update automatically as Section J uploads certificates for new projects.
+      {/* ── Question 3: How much design freedom do I have? ──────────────────── */}
+      <section className="mb-10">
+        <h2 className="text-lg font-medium tracking-tight mb-1">How much design freedom do I have?</h2>
+        <p className="text-sm text-sj-muted mb-6">
+          Based on {certCount === 1 ? "this project's" : "your projects'"} thermal loads, here is the remaining headroom — and what it means in practical glazing terms.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8">
+          {/* Heating headroom */}
+          <div className="border border-sj-line p-6">
+            <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mb-3">Heating headroom</p>
+            <p className="text-4xl font-light tracking-tight mb-1">{avgHeatingHeadroom.toFixed(0)}%</p>
+            <p className="text-sm text-sj-muted mb-4">{avgHeatingAbsolute.toFixed(1)} MJ/m² below the heating limit</p>
+            <div className="border-t border-sj-line pt-4">
+              <p className="text-xs text-sj-muted leading-relaxed">
+                {avgHeatingHeadroom > 20
+                  ? `You have a comfortable heating buffer. Adding more north-facing glazing (approximately ${additionalGlazingCapacity("N") ?? "—"} m² estimated capacity) could further improve passive heating without risk.`
+                  : avgHeatingHeadroom > 5
+                  ? "Heating headroom is adequate. North glazing is well-deployed but there is limited room to expand further without detailed modelling."
+                  : "Heating load is close to the limit. Prioritise insulation improvements before adding more glazing."}
+              </p>
+            </div>
+          </div>
+
+          {/* Cooling headroom */}
+          <div className="border border-sj-line p-6">
+            <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mb-3">Cooling headroom</p>
+            <p className="text-4xl font-light tracking-tight mb-1">{avgCoolingHeadroom.toFixed(0)}%</p>
+            <p className="text-sm text-sj-muted mb-4">{avgCoolingAbsolute.toFixed(1)} MJ/m² below the cooling limit</p>
+            <div className="border-t border-sj-line pt-4">
+              <p className="text-xs text-sj-muted leading-relaxed">
+                {avgCoolingHeadroom > 30
+                  ? `Strong cooling buffer. This gives you meaningful flexibility — estimated additional glazing capacity: east ~${additionalGlazingCapacity("E") ?? "—"} m², north ~${additionalGlazingCapacity("N") ?? "—"} m². West glazing remains the highest risk use of this headroom.`
+                  : avgCoolingHeadroom > 10
+                  ? `Moderate cooling headroom. Estimated capacity for additional east-facing glazing: ~${additionalGlazingCapacity("E") ?? "—"} m². Avoid adding west glazing without detailed modelling.`
+                  : "Cooling load is close to the limit. Do not add west or south-west glazing. Any additional glazing should be north-facing only."}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Orientation priority guide */}
+        <div className="border border-sj-line p-6">
+          <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted mb-4">Where to use your remaining headroom</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div>
+              <p className="text-xs font-medium text-emerald-700 mb-2">Best use of headroom</p>
+              <p className="text-xs text-sj-muted leading-relaxed">
+                North-facing glazing in zone 62 gives you passive heating benefit with minimal cooling cost.
+                Increase north glazing area first if the design allows.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-amber-700 mb-2">Use with caution</p>
+              <p className="text-xs text-sj-muted leading-relaxed">
+                East-facing glazing is manageable with awnings. Each m² costs more cooling headroom than north —
+                use it for daylight and cross-ventilation, not as primary solar access.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-red-700 mb-2">Avoid unless necessary</p>
+              <p className="text-xs text-sj-muted leading-relaxed">
+                West and south-west glazing consume cooling headroom at 4–5× the rate of north.
+                If required, drop SHGC below 0.3 and use external shading as a primary strategy.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <p className="text-xs text-sj-muted">
+        Insights sharpen as more certificates are uploaded. Capacity estimates are approximations based on zone 62 solar heat gain factors at SHGC 0.5 reference.
       </p>
     </div>
   );
