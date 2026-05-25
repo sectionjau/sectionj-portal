@@ -9,6 +9,15 @@ const statusColour: Record<string, string> = {
   Complete:  "text-sj-muted bg-sj-surface border-sj-line",
 };
 
+type Project = {
+  id: string;
+  name: string;
+  address: string;
+  project_type: string;
+  service: string;
+  status: string;
+};
+
 export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -27,16 +36,17 @@ export default async function DashboardPage() {
     .select("project_id, projects ( id, name, address, project_type, service, status )")
     .eq("client_id", user!.id);
 
-    const projects = (projectLinks ?? [])
-    .flatMap((l) => (Array.isArray(l.projects) ? l.projects : l.projects ? [l.projects] : []))
-    as {
-      id: string;
-      name: string;
-      address: string;
-      project_type: string;
-      service: string;
-      status: string;
-    }[];
+  const projects: Project[] = [];
+  for (const link of projectLinks ?? []) {
+    const p = link.projects;
+    if (!p) continue;
+    if (Array.isArray(p)) {
+      for (const item of p) projects.push(item as Project);
+    } else {
+      projects.push(p as unknown as Project);
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-6 md:px-12 py-12 md:py-20">
       <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-4 font-medium">
