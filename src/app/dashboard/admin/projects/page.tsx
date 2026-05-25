@@ -86,6 +86,7 @@ const { data: projects } = await adminClient
                       {p.status}
                     </span>
                   </div>
+                  <p className="text-sm text-sj-muted truncate">{p.address}</p>
                   <p className="text-xs text-sj-muted mt-1">
                     {p.project_type} · {p.service}
                   </p>
@@ -99,11 +100,6 @@ const { data: projects } = await adminClient
                   <button
                     type="submit"
                     className="text-xs text-sj-muted underline underline-offset-4 hover:text-red-600 hover:no-underline transition-colors"
-                    onClick={(e) => {
-                      if (!confirm(`Delete "${p.name}"? This cannot be undone.`)) {
-                        e.preventDefault();
-                      }
-                    }}
                   >
                     Delete
                   </button>
