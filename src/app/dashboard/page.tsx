@@ -27,9 +27,9 @@ export default async function DashboardPage() {
     .select("project_id, projects ( id, name, address, project_type, service, status )")
     .eq("client_id", user!.id);
 
-  const projects = (projectLinks ?? [])
-    .map((l) => l.projects)
-    .filter(Boolean) as {
+    const projects = (projectLinks ?? [])
+    .flatMap((l) => (Array.isArray(l.projects) ? l.projects : l.projects ? [l.projects] : []))
+    as {
       id: string;
       name: string;
       address: string;
@@ -37,7 +37,6 @@ export default async function DashboardPage() {
       service: string;
       status: string;
     }[];
-
   return (
     <div className="max-w-6xl mx-auto px-6 md:px-12 py-12 md:py-20">
       <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-4 font-medium">
