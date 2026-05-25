@@ -47,6 +47,8 @@ export default async function DashboardPage() {
     }
   }
 
+  const nathersProjects = projects.filter((p) => p.service === "NatHERS");
+
   return (
     <div className="max-w-6xl mx-auto px-6 md:px-12 py-12 md:py-20">
       <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-4 font-medium">
@@ -56,16 +58,22 @@ export default async function DashboardPage() {
         Welcome, {greeting}.
       </h1>
 
+      {/* NatHERS Projects Table */}
       <div className="mb-16">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-medium tracking-tight">Your projects</h2>
+          <div>
+            <p className="text-[0.72rem] tracking-eyebrow uppercase text-sj-muted mb-1 font-medium">
+              Service 1
+            </p>
+            <h2 className="text-lg font-medium tracking-tight">NatHERS assessments</h2>
+          </div>
         </div>
 
-        {projects.length === 0 ? (
+        {nathersProjects.length === 0 ? (
           <div className="border border-sj-line bg-sj-surface px-8 py-12 text-center max-w-2xl">
             <p className="text-sj-muted text-sm leading-relaxed">
-              No projects yet. Once Section J has set up your project,
-              it will appear here with your documents and insights.
+              No NatHERS projects yet. Once Section J has set up your first assessment,
+              it will appear here.
             </p>
             <p className="text-xs text-sj-muted mt-3">
               Questions? Email{" "}
@@ -75,28 +83,30 @@ export default async function DashboardPage() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => (
+          <div className="border border-sj-line divide-y divide-sj-line">
+            {/* Table header */}
+            <div className="px-6 py-3 bg-sj-surface grid grid-cols-[1fr_auto_auto] gap-6 items-center">
+              <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted font-medium">Project</p>
+              <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted font-medium w-24 text-center">Type</p>
+              <p className="text-[0.65rem] uppercase tracking-eyebrow text-sj-muted font-medium w-20 text-right">Status</p>
+            </div>
+            {/* Rows */}
+            {nathersProjects.map((project) => (
               <div
                 key={project.id}
-                className="border border-sj-line bg-white p-6 flex flex-col gap-3"
+                className="px-6 py-4 grid grid-cols-[1fr_auto_auto] gap-6 items-center hover:bg-sj-surface transition-colors"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-medium tracking-tight leading-snug">{project.name}</h3>
+                <div className="min-w-0">
+                  <p className="font-medium tracking-tight truncate">{project.name}</p>
+                  <p className="text-sm text-sj-muted truncate mt-0.5">{project.address}</p>
+                </div>
+                <p className="text-xs text-sj-muted w-24 text-center">{project.project_type}</p>
+                <div className="w-20 flex justify-end">
                   <span
-                    className={`shrink-0 text-[0.6rem] uppercase tracking-eyebrow border px-2 py-0.5 ${statusColour[project.status] ?? ""}`}
+                    className={`text-[0.65rem] uppercase tracking-eyebrow border px-2 py-0.5 ${statusColour[project.status] ?? ""}`}
                   >
                     {project.status}
                   </span>
-                </div>
-                <p className="text-sm text-sj-muted leading-relaxed">{project.address}</p>
-                <p className="text-xs text-sj-muted">
-                  {project.project_type} · {project.service}
-                </p>
-                <div className="mt-auto pt-3 border-t border-sj-line">
-                  <p className="text-xs text-sj-muted italic">
-                    Design insights coming soon.
-                  </p>
                 </div>
               </div>
             ))}
