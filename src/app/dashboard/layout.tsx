@@ -21,16 +21,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <Link href="/dashboard" className="text-base md:text-lg font-medium tracking-tight no-underline">
               Section J
             </Link>
-            {isAdmin && (
-              <nav className="hidden sm:flex items-center gap-6 text-sm text-sj-muted">
+            <nav className="hidden sm:flex items-center gap-6 text-sm text-sj-muted">
+              {isAdmin ? (
                 <Link
                   href="/dashboard/admin/projects"
                   className="hover:text-sj-fg transition-colors no-underline"
                 >
                   Projects
                 </Link>
-              </nav>
-            )}
+              ) : (
+                <Link
+                  href="/dashboard/insights"
+                  className="hover:text-sj-fg transition-colors no-underline"
+                >
+                  Glazing insights
+                </Link>
+              )}
+            </nav>
           </div>
           <nav className="flex items-center gap-6 text-sm">
             <span className="text-sj-muted hidden sm:inline">{user?.email}</span>

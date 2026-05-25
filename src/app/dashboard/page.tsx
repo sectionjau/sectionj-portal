@@ -67,6 +67,14 @@ export default async function DashboardPage() {
             </p>
             <h2 className="text-lg font-medium tracking-tight">NatHERS assessments</h2>
           </div>
+          {nathersProjects.length > 0 && (
+            <Link
+              href="/dashboard/insights"
+              className="text-xs text-sj-muted underline underline-offset-4 hover:text-sj-fg transition-colors"
+            >
+              View glazing insights →
+            </Link>
+          )}
         </div>
 
         {nathersProjects.length === 0 ? (
