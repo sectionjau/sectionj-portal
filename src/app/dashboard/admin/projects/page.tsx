@@ -73,7 +73,7 @@ export default async function AdminProjectsPage({
       ) : (
         <div className="border border-sj-line divide-y divide-sj-line">
           {projects.map((p) => {
-            const clients = (p.project_clients as { profiles: { full_name: string } | null }[]) ?? [];
+            const clients = (p.project_clients as unknown as { profiles: { full_name: string } | null }[]) ?? [];
             return (
               <div key={p.id} className="px-6 py-5 flex items-center justify-between gap-6">
                 <div className="min-w-0 flex-1">
