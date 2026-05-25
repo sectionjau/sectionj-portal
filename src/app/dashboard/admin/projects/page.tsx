@@ -123,7 +123,3 @@ export default async function AdminProjectsPage({
     </div>
   );
 }
-      )}
-    </div>
-  );
-}
