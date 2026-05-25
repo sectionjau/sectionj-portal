@@ -26,12 +26,9 @@ export default async function AdminProjectsPage({
 
   // Data fetch via admin client (bypasses RLS)
   const adminClient = createAdminClient();
-  const { data: projects } = await adminClient
+const { data: projects } = await adminClient
     .from("projects")
-    .select(`
-      id, name, address, project_type, service, status, created_at,
-      project_clients ( client_id, profiles ( full_name ) )
-    `)
+    .select("id, name, address, project_type, service, status, created_at")
     .order("created_at", { ascending: false });
 
   const params = await searchParams;
@@ -77,7 +74,7 @@ export default async function AdminProjectsPage({
       ) : (
         <div className="border border-sj-line divide-y divide-sj-line">
           {projects.map((p) => {
-            const clients = (p.project_clients as unknown as { profiles: { full_name: string } | null }[]) ?? [];
+           
             return (
               <div key={p.id} className="px-6 py-5 flex items-center justify-between gap-6">
                 <div className="min-w-0 flex-1">
@@ -89,12 +86,8 @@ export default async function AdminProjectsPage({
                       {p.status}
                     </span>
                   </div>
-                  <p className="text-sm text-sj-muted truncate">{p.address}</p>
                   <p className="text-xs text-sj-muted mt-1">
                     {p.project_type} · {p.service}
-                    {clients.length > 0 && (
-                      <> · {clients.map((c) => c.profiles?.full_name ?? "—").join(", ")}</>
-                    )}
                   </p>
                 </div>
                 <form
